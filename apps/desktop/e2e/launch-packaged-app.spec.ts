@@ -1,11 +1,10 @@
-import { expect, test } from './test'
-
 import {
   PACKAGED_BINARY_PATH,
   type PackagedAppFixture,
   packagedBinaryExists,
   setupPackagedApp,
 } from './fixtures'
+import { expect, test } from './test'
 import { expectVisualSnapshot } from './visual-snapshot'
 
 /**
@@ -133,6 +132,41 @@ test('HUD composer remains fully inside the transparent window', async () => {
   expect(geometry.dockTranslate ?? 'none').not.toContain('%')
 
   await hudPage.close()
+})
+
+test('Digital Pet preference boots inside the ordinary single HUD window', async () => {
+  await fixture!.page.evaluate(() => {
+    window.localStorage.setItem('hermes.desktop.hud.digital-pet.v1', 'true')
+  })
+
+  const hudPagePromise = fixture!.app.waitForEvent('window')
+
+  await fixture!.page.evaluate(() =>
+    (window as typeof window & {
+      hermesDesktop?: { hud?: { open: (options: { sessionId: null }) => Promise<void> } }
+    }).hermesDesktop?.hud?.open({ sessionId: null })
+  )
+
+  const hudPage = await hudPagePromise
+  const shell = hudPage.locator('[data-hud-shell][data-hud-presentation="digital-pet"]')
+
+  await expect(shell).toBeVisible()
+  await expect(hudPage.locator('.digital-pet-layer')).toBeAttached()
+  await expect(hudPage.locator('[data-hud-content]')).toBeVisible()
+  await expect(hudPage.getByRole('button', { name: 'Start voice conversation' })).toBeVisible()
+  expect(hudPage.url()).not.toContain('presentation=')
+
+  const windowUrls: string[] = await fixture!.app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows().map((window: { webContents: { getURL(): string } }) => window.webContents.getURL()),
+  )
+
+  expect(windowUrls.filter(url => url.includes('win=hud'))).toHaveLength(1)
+  expect(windowUrls.some(url => url.includes('win=overlay'))).toBe(false)
+
+  await hudPage.close()
+  await fixture!.page.evaluate(() => {
+    window.localStorage.setItem('hermes.desktop.hud.digital-pet.v1', 'false')
+  })
 })
 
 test('boot progress overlay fades out or shows error state', async () => {

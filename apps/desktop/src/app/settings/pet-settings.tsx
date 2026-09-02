@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
 import { type ReactNode, useEffect, useState } from 'react'
 
 import { useGatewayRequest } from '@/app/gateway/hooks/use-gateway-request'
+import { $digitalPetHudEnabled } from '@/app/hud/digital-pet/state'
 import { PetThumb } from '@/components/pet/pet-thumb'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -57,6 +58,7 @@ export function PetSettings() {
   const busySlug = useStore($petBusy)
   const petInfo = useStore($petInfo)
   const roam = useStore($petRoam)
+  const digitalPetHudEnabled = useStore($digitalPetHudEnabled)
   const [query, setQuery] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<GalleryPet | null>(null)
   const [renameTarget, setRenameTarget] = useState<GalleryPet | null>(null)
@@ -316,6 +318,24 @@ export function PetSettings() {
             title={copy.roamTitle}
           />
         )}
+
+        <ListRow
+          action={
+            <SegmentedControl
+              onChange={id => {
+                $digitalPetHudEnabled.set(id === 'digital-pet')
+                triggerHaptic('crisp')
+              }}
+              options={[
+                { id: 'standard', label: copy.digitalHudStandard },
+                { id: 'digital-pet', label: copy.digitalHudPet }
+              ]}
+              value={digitalPetHudEnabled ? 'digital-pet' : 'standard'}
+            />
+          }
+          description={copy.digitalHudDesc}
+          title={copy.digitalHudTitle}
+        />
       </div>
 
       <ConfirmDialog

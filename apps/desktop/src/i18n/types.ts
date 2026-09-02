@@ -525,6 +525,14 @@ export interface Translations {
         scaleDesc: string
         roamTitle: string
         roamDesc: string
+        digitalHudTitle: string
+        digitalHudDesc: string
+        digitalHudStandard: string
+        digitalHudPet: string
+        digitalHudShow: string
+        digitalHudHide: string
+        digitalHudClose: string
+        digitalHudRequired: string
         chooseTitle: string
         chooseDesc: string
         searchPlaceholder: string

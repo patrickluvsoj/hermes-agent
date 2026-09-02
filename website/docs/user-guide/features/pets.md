@@ -135,6 +135,20 @@ In the desktop app you can manage the pet two ways:
 Both adopt/toggle/resize the floating mascot in place — size changes apply
 instantly; adopting a new pet lights it up within a moment.
 
+### Digital Pet HUD
+
+Under **Settings → Appearance → Pet**, choose **Digital pet** for the HUD
+presentation. The ordinary HUD window then opens with your active Petdex pet
+beside the existing conversation surface. Click the pet to show or hide the
+full scrollable transcript and composer; microphone dictation and real-time
+voice remain the standard HUD controls.
+
+Digital Pet uses the normal HUD window, movement, resize, session, and saved
+geometry. The pet is scaled down only when necessary to fit the compact HUD.
+If a standalone Pet Overlay is already open, Hermes temporarily hides it while
+Digital Pet HUD owns the mascot and restores it when the HUD closes. Turning
+the presentation setting on or off applies the next time a HUD window opens.
+
 ### Roaming
 
 Settings → Appearance has a **Roam** toggle: when enabled, the pet wanders the

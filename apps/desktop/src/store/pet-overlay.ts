@@ -135,6 +135,9 @@ export function overlayWindowSize(frameW: number, frameH: number, scale: number)
 }
 
 let stateUnsubs: Array<() => void> = []
+let overlaySuspended = false
+let nextSuspensionClose = 1
+const pendingSuspensionCloseEchoes = new Set<number>()
 let controlUnsub: (() => void) | null = null
 let submitHandler: ((text: string) => void) | null = null
 let openAppHandler: (() => void) | null = null
@@ -155,6 +158,14 @@ function pushNow(): void {
   window.hermesDesktop?.petOverlay?.pushState(currentPayload())
 }
 
+function stopStateMirror(): void {
+  for (const off of stateUnsubs) {
+    off()
+  }
+
+  stateUnsubs = []
+}
+
 /**
  * Open the overlay window and start mirroring live state into it. The main
  * process echoes back the actual screen bounds it used, which we persist so the
@@ -163,7 +174,7 @@ function pushNow(): void {
 function openOverlay(request: PetOverlayOpenRequest): void {
   const api = window.hermesDesktop?.petOverlay
 
-  if (!api || stateUnsubs.length) {
+  if (!api || overlaySuspended || stateUnsubs.length) {
     return
   }
 
@@ -238,13 +249,44 @@ export function restorePetOverlay(): void {
   openOverlay({ bounds: saved, screen: true })
 }
 
-/** Pop the pet back into the window (closes the overlay window). */
-export function popInPet(): void {
-  for (const off of stateUnsubs) {
-    off()
+/**
+ * Temporarily yield the native overlay to another pet surface without changing
+ * the user's persisted pop-out choice. `resumePetOverlay` reopens the same
+ * remembered bounds and restarts the existing state mirror.
+ */
+export function suspendPetOverlay(): boolean {
+  const api = window.hermesDesktop?.petOverlay
+
+  if (!api || overlaySuspended || !$petOverlayActive.get()) {
+    return false
   }
 
-  stateUnsubs = []
+  overlaySuspended = true
+  stopStateMirror()
+  const closeToken = nextSuspensionClose++
+  pendingSuspensionCloseEchoes.add(closeToken)
+  window.setTimeout(() => pendingSuspensionCloseEchoes.delete(closeToken), 1_000)
+  void api.close()
+
+  return true
+}
+
+export function resumePetOverlay(): boolean {
+  if (!overlaySuspended) {
+    return false
+  }
+
+  overlaySuspended = false
+  restorePetOverlay()
+
+  return true
+}
+
+/** Pop the pet back into the window (closes the overlay window). */
+export function popInPet(): void {
+  overlaySuspended = false
+  pendingSuspensionCloseEchoes.clear()
+  stopStateMirror()
   $petOverlayActive.set(false)
   void window.hermesDesktop?.petOverlay?.close()
 }
@@ -277,6 +319,14 @@ export function initPetOverlayBridge(): () => void {
 
   controlUnsub = api.onControl(payload => {
     if (payload?.type === 'pop-in') {
+      const expected = pendingSuspensionCloseEchoes.values().next()
+
+      if (!expected.done) {
+        pendingSuspensionCloseEchoes.delete(expected.value)
+
+        return
+      }
+
       popInPet()
     } else if (payload?.type === 'ready') {
       // The overlay just mounted — hand it the current frame.

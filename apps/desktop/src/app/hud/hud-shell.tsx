@@ -10,6 +10,8 @@ import { RICH_INPUT_SLOT } from '../chat/composer/rich-editor'
 import { WiredPane } from '../contrib/wiring'
 
 import { useHudClickThrough } from './click-through'
+import { DigitalPetPresentation } from './digital-pet/presentation'
+import { $digitalPetHudEnabled } from './digital-pet/state'
 import { useHudGameOverlay } from './game-overlay'
 import { useHudGlass } from './glass'
 import { useHudGoto, useReportHudSession } from './handoff'
@@ -195,6 +197,7 @@ function useHudHeld(gameUnder: boolean): boolean {
  */
 export function HudShell() {
   const [recent, holdBand] = useRecentActivity()
+  const digitalPetEnabled = useStore($digitalPetHudEnabled)
   // A fullscreen app (a game) is under the HUD: wear `data-hud-game` so the
   // idle bar steps back to overlay opacity (see styles.css). Detection is
   // main's — the page cannot see other apps' windows.
@@ -318,6 +321,7 @@ export function HudShell() {
       data-hud-game={gameUnder ? '' : undefined}
       data-hud-held={held ? '' : undefined}
       data-hud-input={hudInput}
+      data-hud-presentation={digitalPetEnabled ? 'digital-pet' : 'standard'}
       data-hud-recent={recent || held ? '' : undefined}
       data-hud-shell
       // Letting go of the composer re-arms the hold, so the transcript steps
@@ -339,7 +343,11 @@ export function HudShell() {
           it paints behind the transcript. */}
       <div aria-hidden data-hud-glass />
 
-      <WiredPane part="chatRoutes" />
+      {digitalPetEnabled && <DigitalPetPresentation />}
+
+      <div className="relative flex min-h-0 flex-1 flex-col" data-hud-content>
+        <WiredPane part="chatRoutes" />
+      </div>
 
       {/* CanvasTTY-style resize frame. Windows/macOS/X11 get every edge and
           corner; native Wayland gets the right/bottom handles it can honour

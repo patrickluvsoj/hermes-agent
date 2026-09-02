@@ -2,32 +2,23 @@ import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { useGatewayRequest } from '@/app/gateway/hooks/use-gateway-request'
-import { useOnProfileSwitch } from '@/app/hooks/use-on-profile-switch'
 import { useRouteOverlayActive } from '@/app/hooks/use-route-overlay-active'
+import { useDigitalPetHudOverlayOwnership } from '@/app/hud/digital-pet/overlay-ownership'
 import { PetHeartField } from '@/components/chat/vibe-hearts'
 import { persistString, storedString } from '@/lib/storage'
-import { $changeEventsAvailable, $petChange } from '@/store/live-sync'
 import {
   $petAtRest,
-  $petInfo,
   $petRoam,
   $petRoamDir,
-  clearPetUnread,
-  hasPetSpriteForMeta,
-  mergePetInfoMeta,
-  type PetInfo,
-  type PetInfoMeta,
-  petProfile,
-  setPetInfo
+  clearPetUnread
 } from '@/store/pet'
-import { resetPetGallery, setPetScale } from '@/store/pet-gallery'
+import { setPetScale } from '@/store/pet-gallery'
 import { $petOverlayActive, initPetOverlayBridge, popOutPet, restorePetOverlay } from '@/store/pet-overlay'
-import { $gatewayState } from '@/store/session'
 import { isSecondaryWindow } from '@/store/windows'
 import { useTheme } from '@/themes/context'
 
-import { PET_STARTUP_RETRY_MS, petInfoPollIntervalMs } from './pet-info-poll'
 import { PetSprite, roamWalkRow } from './pet-sprite'
+import { usePetInfoSync } from './use-pet-info-sync'
 import { usePetRoam } from './use-pet-roam'
 import { type PetZoomAnchor, usePetZoomGesture } from './use-pet-zoom-gesture'
 
@@ -102,10 +93,7 @@ function loadPosition(): Point {
 export function FloatingPet() {
   const { requestGateway } = useGatewayRequest()
   const { resolvedMode } = useTheme()
-  const gatewayState = useStore($gatewayState)
-  const info = useStore($petInfo)
-  const changeEventsAvailable = useStore($changeEventsAvailable)
-  const petChange = useStore($petChange)
+  const info = usePetInfoSync(requestGateway)
   const overlayActive = useStore($petOverlayActive)
   const roamEnabled = useStore($petRoam)
   const atRest = useStore($petAtRest)
@@ -128,153 +116,13 @@ export function FloatingPet() {
   // directly to avoid a React re-render (and canvas reflow) per pointermove —
   // state is only committed on release.
   const dragRef = useRef<{ dx: number; dy: number; x: number; y: number } | null>(null)
+  useDigitalPetHudOverlayOwnership()
 
   // Keep the *whole* pet on-screen at its current size, so growing it near an
   // edge can't leave the window cropping it. Shared by drag + the reclamp effect.
   const clamp = useCallback(({ x, y }: Point): Point => clampPoint(x, y, petW, petH), [petW, petH])
 
-  // Fetch pet.info on connect. pet.changed re-runs this effect when the
-  // signature moves; a slow backstop covers silent seed + cold-start races.
-  // Older backends (no change_events) keep the legacy fast-while-inactive poll.
   const active = info.enabled && Boolean(info.spritesheetBase64)
-  useEffect(() => {
-    if (gatewayState !== 'open') {
-      return
-    }
-
-    let cancelled = false
-
-    // pet.changed already carries the meta payload — an enabled=false
-    // broadcast clears the mascot with zero round-trips, and an unchanged
-    // revision (scale-only move still changes the sig) short-circuits below
-    // via hasPetSpriteForMeta + mergePetInfoMeta.
-    if (changeEventsAvailable && petChange.tick > 0 && petChange.meta?.enabled === false) {
-      setPetInfo({ enabled: false })
-
-      return
-    }
-
-    const pull = async () => {
-      try {
-        if (active) {
-          try {
-            const meta = await requestGateway<PetInfoMeta>('pet.info.meta', { profile: petProfile() })
-
-            if (cancelled || !meta) {
-              return
-            }
-
-            if (!meta.enabled) {
-              setPetInfo({ enabled: false })
-
-              return
-            }
-
-            const current = $petInfo.get()
-
-            if (hasPetSpriteForMeta(current, meta)) {
-              const merged = mergePetInfoMeta(current, meta)
-
-              if (merged !== current) {
-                setPetInfo(merged)
-              }
-
-              return
-            }
-          } catch {
-            // Older gateways may not have pet.info.meta yet; fall back to pet.info.
-          }
-        }
-
-        // Send-once semantics (#54730): tell the gateway which spritesheet
-        // revision we already hold so an unchanged multi-MB sheet is not
-        // re-sent over the WebSocket on every backstop refresh.
-        const held = $petInfo.get()
-        const knownRevision = held.enabled && held.spritesheetBase64 ? held.spritesheetRevision : undefined
-
-        const next = await requestGateway<PetInfo & { spritesheetUnchanged?: boolean }>('pet.info', {
-          knownRevision,
-          profile: petProfile()
-        })
-
-        if (!cancelled && next) {
-          const current = $petInfo.get()
-
-          if (next.enabled && next.spritesheetUnchanged && !next.spritesheetBase64) {
-            // Gateway confirmed our held sheet is current; keep the bytes.
-            next.spritesheetBase64 = current.spritesheetBase64
-          }
-
-          if (
-            next.enabled &&
-            current.enabled &&
-            current.slug === next.slug &&
-            current.displayName === next.displayName &&
-            current.scale === next.scale &&
-            current.spritesheetRevision &&
-            current.spritesheetRevision === next.spritesheetRevision
-          ) {
-            return
-          }
-
-          setPetInfo(next)
-        }
-      } catch {
-        // cosmetic feature — never surface gateway errors
-      }
-    }
-
-    const pullIfVisible = () => {
-      if (document.visibilityState === 'visible') {
-        void pull()
-      }
-    }
-
-    void pull()
-    window.addEventListener('focus', pull)
-
-    // Cover the cold-start race where the first pull hit fail-open enabled:false
-    // before the pet store was warm. Skip further retries once the mascot is live.
-    const startupRetryTimers = PET_STARTUP_RETRY_MS.map(delay =>
-      window.setTimeout(() => {
-        if (cancelled) {
-          return
-        }
-
-        const current = $petInfo.get()
-
-        if (current.enabled && current.spritesheetBase64) {
-          return
-        }
-
-        pullIfVisible()
-      }, delay)
-    )
-
-    // Always keep a timer. Event-capable backends use the slow backstop (same
-    // contract as cron/sessions in use-background-sync); legacy keeps the
-    // historical fast-while-inactive cadence.
-    const timer = window.setInterval(pullIfVisible, petInfoPollIntervalMs(changeEventsAvailable, active))
-
-    return () => {
-      cancelled = true
-      window.removeEventListener('focus', pull)
-
-      for (const id of startupRetryTimers) {
-        window.clearTimeout(id)
-      }
-
-      window.clearInterval(timer)
-    }
-  }, [gatewayState, active, changeEventsAvailable, petChange, requestGateway])
-
-  // Pets are per-profile. When the active profile changes, drop the previous
-  // profile's mascot + gallery cache so the poll above refetches the new
-  // profile's pet (its config + pets dir resolve per-profile on the backend).
-  useOnProfileSwitch(() => {
-    setPetInfo({ enabled: false })
-    resetPetGallery()
-  })
 
   // Wire the overlay control channel once, only in the primary window — the
   // pop-out overlay belongs to it (main.ts positions it against the main

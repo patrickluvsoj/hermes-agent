@@ -1,0 +1,179 @@
+/* Digital Pet is renderer-local. Native HUD geometry, movement, session,
+   composer, voice, and click-through remain Standard HUD behavior. The pet
+   presentation changes only the arrangement: one real composer beside the pet,
+   with a bounded assistant-only speech bubble below it. */
+[data-hud-shell][data-hud-presentation='digital-pet']:has([data-digital-pet-ready]) {
+  --digital-pet-slot: 5.75rem;
+  --digital-pet-speech-width: min(26rem, calc(100vw - var(--digital-pet-slot) - 0.75rem));
+}
+
+/* Reserve a compact control-sized slot beside the EXISTING composer. There is
+   no pet-specific input and no second submit path. */
+[data-hud-shell][data-hud-presentation='digital-pet']:has([data-digital-pet-ready]) [data-slot='composer-dock'] {
+  top: 0.35rem !important;
+  left: 0.25rem !important;
+  width: calc(100% - var(--digital-pet-slot) - 0.25rem) !important;
+  max-width: none !important;
+  translate: none !important;
+}
+
+/* Clicking the pet closes only its speech bubble. The composer stays mounted,
+   visible, and fully functional—including real-time voice. */
+[data-hud-shell][data-hud-presentation='digital-pet']:has([data-digital-pet-collapsed])
+  [data-slot='composer-bounds'],
+[data-hud-shell][data-hud-presentation='digital-pet']:has([data-digital-pet-collapsed]) [data-hud-glass] {
+  opacity: 0 !important;
+  translate: 0 -0.5rem !important;
+  pointer-events: none !important;
+}
+
+/* Collapsed means composer + pet, with no speech transcript. Invisible resize
+   edges must not become dead strips over the app underneath. */
+[data-hud-shell][data-hud-presentation='digital-pet']:has([data-digital-pet-collapsed]) [data-hud-resize] {
+  pointer-events: none;
+}
+
+/* A deliberate pet click makes one compact speech bubble a real surface even
+   though Standard HUD's focus/recent state may otherwise be resting or faded. */
+[data-hud-shell][data-hud-presentation='digital-pet']:has([data-digital-pet-expanded])
+  :is([data-slot='composer-bounds'], [data-hud-glass]) {
+  top: calc(var(--hud-bar-height, var(--composer-fallback-height)) + 0.75rem) !important;
+  right: var(--digital-pet-slot) !important;
+  bottom: auto !important;
+  left: auto !important;
+  width: var(--digital-pet-speech-width) !important;
+  height: min(var(--hud-band-height, 0px), 4rem) !important;
+  border-radius: 0.75rem !important;
+  opacity: 1 !important;
+  translate: none;
+  transition-delay: 0s;
+}
+
+[data-hud-shell][data-hud-presentation='digital-pet']:has([data-digital-pet-expanded])
+  [data-slot='composer-bounds'] {
+  pointer-events: auto;
+}
+
+/* Input belongs in the composer. Do not echo it back inside the pet's speech
+   bubble—the duplicate human line was the faint, confusing "input box" in the
+   rejected preview. */
+[data-hud-shell][data-hud-presentation='digital-pet']
+  :is([data-slot='aui_user-message-root'], .composer-human-message-container) {
+  display: none !important;
+}
+
+/* A pet speech bubble shows the current reply, not a miniaturized chat log.
+   Hide any turn wrapper that has a newer turn after it. */
+[data-hud-shell][data-hud-presentation='digital-pet']
+  [data-slot='aui_thread-content']
+  > *:has(~ * [data-slot='aui_turn-pair']) {
+  display: none !important;
+}
+
+[data-hud-shell][data-hud-presentation='digital-pet'] [data-slot='aui_thread-viewport'] {
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+}
+
+[data-hud-shell][data-hud-presentation='digital-pet']
+  [data-slot='aui_assistant-message-root']
+  > :has([data-slot='aui_msg-actions']) {
+  display: none !important;
+}
+
+[data-hud-shell][data-hud-presentation='digital-pet'] [data-slot='aui_assistant-message-content'] {
+  color: rgb(246 249 252 / 0.98) !important;
+  opacity: 1 !important;
+}
+
+[data-hud-shell][data-hud-presentation='digital-pet']:has([data-digital-pet-expanded]) [data-hud-glass] {
+  border: 1px solid rgb(255 255 255 / 0.12);
+  background: rgb(12 14 18 / 0.88);
+  box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 0.32);
+}
+
+/* A real bubble pointer, attached to the bubble rather than pasted beside the
+   mascot. */
+[data-hud-shell][data-hud-presentation='digital-pet']:has([data-digital-pet-expanded]) [data-hud-glass]::after {
+  position: absolute;
+  top: 0.85rem;
+  right: -0.55rem;
+  width: 0.65rem;
+  height: 0.85rem;
+  background: rgb(12 14 18 / 0.88);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  content: '';
+}
+
+.digital-pet-layer {
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  pointer-events: none;
+}
+
+.digital-pet-mascot {
+  position: absolute;
+  top: 0.35rem;
+  right: 1.25rem;
+  display: grid;
+  min-height: var(--hud-bar-height, var(--composer-fallback-height));
+  place-items: center;
+  pointer-events: auto;
+}
+
+.digital-pet-toggle {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.digital-pet-toggle:focus-visible {
+  border-radius: var(--radius-md);
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+
+.digital-pet-close {
+  position: absolute;
+  top: -0.2rem;
+  right: -0.2rem;
+  width: 1.35rem;
+  height: 1.35rem;
+  border: 1px solid color-mix(in srgb, var(--ui-text-primary) 18%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ui-surface-primary) 82%, transparent);
+  color: var(--ui-text-secondary);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.digital-pet-close svg {
+  width: 0.7rem;
+  height: 0.7rem;
+}
+
+.digital-pet-mascot:hover .digital-pet-close,
+.digital-pet-mascot:focus-within .digital-pet-close {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.digital-pet-status {
+  position: absolute;
+  top: calc(var(--hud-bar-height, var(--composer-fallback-height)) + 0.5rem);
+  right: 0.75rem;
+  max-width: 18rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--ui-stroke-tertiary);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--ui-surface-primary) 85%, transparent);
+  color: var(--ui-text-secondary);
+  font-size: var(--conversation-caption-font-size);
+  pointer-events: none;
+}
