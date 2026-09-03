@@ -323,6 +323,35 @@ def _build_systemd_scope_argv(
     ]
 
 
+def restart_safe_gateway_child_argv(
+    command: List[str], *, unit_suffix: str
+) -> List[str]:
+    """Place a managed-systemd gateway child outside the gateway cgroup.
+
+    Children that must survive an intentional gateway restart cannot rely on
+    ``start_new_session`` alone: systemd still kills every process in the
+    service cgroup.  In that topology, require a transient user scope and fail
+    closed if it cannot be established.  Standalone processes, non-systemd
+    supervisors, and non-Linux hosts retain the direct command.
+    """
+    if not _IS_LINUX:
+        return command
+    if not _is_supervised_gateway_process() or not os.environ.get("INVOCATION_ID"):
+        return command
+    if not _systemd_run_user_scope_available():
+        raise RuntimeError(
+            "cannot create restart-safe systemd scope for gateway child: "
+            "systemd-run --user --scope is unavailable"
+        )
+    scoped = _build_systemd_scope_argv(command, unit_suffix=unit_suffix)
+    if scoped == command:
+        raise RuntimeError(
+            "cannot create restart-safe systemd scope for gateway child: "
+            "systemd-run disappeared after the availability probe"
+        )
+    return scoped
+
+
 def _stop_systemd_unit(unit_name: str) -> bool:
     """Stop a transient systemd user scope by unit name.
 
@@ -1537,12 +1566,31 @@ class ProcessRegistry:
         a file that grows while the command runs never sends a byte twice.
         A file that shrank was rotated or truncated, so the offset drops back
         to 0 and the reader starts over.
+
+        The end of the window is pulled back to a UTF-8 character boundary:
+        the backend decodes each ``execute()`` result on its own, so a
+        multibyte character straddling two polls would otherwise come back
+        as replacement characters (and break watch patterns near the seam).
+        Up to 3 trailing continuation bytes are held for the next poll; the
+        header reports the trimmed size so the offset stays consistent.
         """
         return (
             f"O={offset}; "
             f"S=$({{ wc -c < {quoted_log_path}; }} 2>/dev/null | tr -dc '0-9'); "
             f"S=${{S:-0}}; "
             f'if [ "$S" -lt "$O" ]; then O=0; fi; '
+            # Hold back an INCOMPLETE trailing UTF-8 sequence for the next
+            # poll. Scan back up to 3 continuation bytes (octal 200-277) to
+            # the lead byte; if the lead byte's declared length (3xx=2, 34x-35x
+            # =3, 36x-37x=4) exceeds the bytes present, trim to before it.
+            # Complete sequences and ASCII tails are left untouched.
+            f'N=0; P=$S; while [ "$P" -gt "$O" ] && [ "$N" -lt 3 ]; do '
+            f"B=$(tail -c +$P {quoted_log_path} 2>/dev/null | head -c 1 | od -An -to1 | tr -dc '0-9'); "
+            f'case "$B" in 2[0-7][0-7]) P=$((P-1)); N=$((N+1));; *) break;; esac; done; '
+            f'if [ "$N" -gt 0 ] || [ "$P" -eq "$S" ]; then '
+            f"B=$(tail -c +$P {quoted_log_path} 2>/dev/null | head -c 1 | od -An -to1 | tr -dc '0-9'); "
+            f'case "$B" in 3[0-3][0-7]) L=2;; 3[4-5][0-7]) L=3;; 3[6-7][0-7]) L=4;; *) L=1;; esac; '
+            f'if [ "$L" -gt $((N+1)) ]; then S=$((P-1)); fi; fi; '
             f'echo "$S $O"; '
             f'if [ "$S" -gt "$O" ]; then '
             f"tail -c +$((O+1)) {quoted_log_path} 2>/dev/null | head -c $((S-O)); fi"
