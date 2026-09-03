@@ -14,8 +14,8 @@ import { $busy } from '@/store/session'
 
 // The pet shares the composer's row instead of floating over the transcript.
 // Keep it visually the size of a control cluster, not a second panel.
-const HUD_PET_MAX_WIDTH = 68
-const HUD_PET_MAX_HEIGHT = 74
+const HUD_PET_MAX_WIDTH = 88
+const HUD_PET_MAX_HEIGHT = 112
 
 export function hudPetZoom(info: PetInfo): number {
   const scale = info.scale ?? 0.33

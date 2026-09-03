@@ -3,7 +3,7 @@
    presentation changes only the arrangement: one real composer beside the pet,
    with a bounded assistant-only speech bubble below it. */
 [data-hud-shell][data-hud-presentation='digital-pet']:has([data-digital-pet-ready]) {
-  --digital-pet-slot: 5.75rem;
+  --digital-pet-slot: 7rem;
   --digital-pet-speech-width: min(26rem, calc(100vw - var(--digital-pet-slot) - 0.75rem));
 }
 

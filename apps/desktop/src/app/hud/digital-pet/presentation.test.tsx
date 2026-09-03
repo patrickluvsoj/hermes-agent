@@ -96,4 +96,12 @@ describe('hudPetZoom', () => {
     expect(hudPetZoom({ enabled: true, frameH: 100, frameW: 100, scale: 0.5 })).toBe(1)
     expect(hudPetZoom({ enabled: true, frameH: 208, frameW: 192, scale: 3 })).toBeLessThan(0.2)
   })
+
+  it('follows the Pet Size setting until the HUD safety cap is reached', () => {
+    const displayedWidth = (scale: number) =>
+      192 * scale * hudPetZoom({ enabled: true, frameH: 208, frameW: 192, scale })
+
+    expect(displayedWidth(0.4)).toBeGreaterThan(displayedWidth(0.2))
+    expect(displayedWidth(3)).toBeCloseTo(88)
+  })
 })
